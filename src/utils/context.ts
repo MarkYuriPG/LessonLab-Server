@@ -6,8 +6,8 @@ import { embedChunks } from "./embeddings";
 export const getContext = async (
   message: string,
   namespace: string,
+  minScore: number,
   maxCharacters = 5000,
-  minScore = 0.15,
   getOnlyText = true
 ): Promise<string | ScoredPineconeRecord[]> => {
   try {

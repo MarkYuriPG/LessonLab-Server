@@ -269,13 +269,13 @@ class AISocketHandler {
 
   private async processMessagePipeline(client: Client, message: string, workspaceId: string, userTokens: number, chatHistory: Message[]): Promise<void> {
     const intentDecompositionCompletion = await intentDecomposition(this.openai, message);
+    let context;
 
     switch(intentDecompositionCompletion.parsed?.intent_type) {
       case IntentTypeEnum.Values.query:
         console.log("query pipeline");
-        let context;
         try {
-          context = await getContext(intentDecompositionCompletion.parsed.subject, workspaceId);
+          context = await getContext(intentDecompositionCompletion.parsed.subject, workspaceId, 0.4);
           
           if (context?.length === 0) {
             const assistantMessageId = uuid();
@@ -298,59 +298,85 @@ class AISocketHandler {
               }
             });
   
-          } 
+          }
+          else {
+            console.log(context)
+            const systemPrompt =
+              `You are an AI agent that's answers the user's query. You will be given relevant context information from a RAG pipeline in regards to the query. If no context information is supplied , ust answer normally based on your available knowledge. Otherwise, base your response on the information within the context block.
+
+              subject: ${intentDecompositionCompletion.parsed.subject}
+              context_instructions: ${intentDecompositionCompletion.parsed.context_instructions}
+      
+              CONTEXT INFORMATION BLOCK:
+              ---
+              ${context}
+              ---
+              `;
+
+            const systemPromptParam = [{ role: 'system', content: systemPrompt }] as ChatCompletionMessageParam[];
+
+            try {
+              await this.processNewMessage(
+                  client,
+                  systemPromptParam,
+                  workspaceId,
+                  chatHistory,
+                  userTokens);
+            } catch(error){
+              console.error("Error generating query response:", error);
+              throw error;
+            }
+          }
         } catch (error) {
           console.error("Error getting context:", error);
-          throw error;
-        }
-        
-        const systemPrompt = 
-        `You are an AI agent that's answers the user's query. You will be given relevant context information from a RAG pipeline in regards to the query. If no context information is supplied , ust answer normally based on your available knowledge. Otherwise, base your response on the information within the context block.
-
-        subject: ${intentDecompositionCompletion.parsed.subject}
-        context_instructions: ${intentDecompositionCompletion.parsed.context_instructions}
-
-        CONTEXT INFORMATION BLOCK:
-        ---
-        ${context}
-        ---
-        `;
-                  
-        const systemPromptParam = [{ role: 'system', content: systemPrompt }] as ChatCompletionMessageParam[];
-
-        try {
-          await this.processNewMessage(
-            client,
-            systemPromptParam,
-            workspaceId, 
-            chatHistory, 
-            userTokens);
-        } catch(error){
-          console.error("Error generating query response:", error);
           throw error;
         }
         break;
       case IntentTypeEnum.Values.command:
         console.log("command pipeline");
         
-        const commandTypeCompletion = await commandDecomposition(this.openai, intentDecompositionCompletion.parsed?.context_instructions);
-        console.log("Command type:", commandTypeCompletion.parsed?.command_type);
+        context = await getContext(intentDecompositionCompletion.parsed.subject, workspaceId, 0.6);
 
-        try {
-          await this.commandPipelineProcessing(
-            client, 
-            commandTypeCompletion.parsed?.command_type,
-            intentDecompositionCompletion.parsed.subject,
-            intentDecompositionCompletion.parsed.context_instructions,
-            workspaceId,
-            chatHistory,
-            userTokens
-          )
-        } catch(error){
-          console.error("Error generating query response:", error);
-          throw error;
+        if (context?.length === 0) {
+          const assistantMessageId = uuid();
+          client.emit('initialize-assistant-message', assistantMessageId, MessageType.Action, workspaceId, async ({ ack }) => {
+            if (ack === 'success') {
+              const notificationDirective = `::rag_empty_context_notification{notificationMessage="No relevant information found about topic within the workspace. Assistant response information may be inaccurate. Try adding files to the workspace that contains relevant information."}`;
+              client.emit('content', notificationDirective, notificationDirective as any, assistantMessageId, workspaceId);
+              
+              client.emit('end', workspaceId);
+    
+              assistantController.insertChatHistory(
+                {
+                  role: 'assistant',
+                  content: notificationDirective,
+                },
+                assistantMessageId,
+                MessageType.Action,
+                workspaceId
+              );
+            }
+          });
         }
+        else{
+          const commandTypeCompletion = await commandDecomposition(this.openai, intentDecompositionCompletion.parsed?.context_instructions);
+          console.log("Command type:", commandTypeCompletion.parsed?.command_type);
 
+          try {
+            await this.commandPipelineProcessing(
+              client, 
+              commandTypeCompletion.parsed?.command_type,
+              intentDecompositionCompletion.parsed.subject,
+              intentDecompositionCompletion.parsed.context_instructions,
+              workspaceId,
+              chatHistory,
+              userTokens
+            )
+          } catch(error){
+            console.error("Error generating query response:", error);
+            throw error;
+          }
+        }
         break;
       case IntentTypeEnum.Values.informative:
         console.log("informative pipeline");
@@ -594,6 +620,72 @@ class AISocketHandler {
     switch(commandTypeCompletion) {
       case commandTypeEnum.Values.create_module:
         try {
+          let context;
+          // try {
+            // context = await getContext(subject, workspaceId);
+          //   console.log("CONTEXT:-----------" + context);
+
+          //   if (context?.length === 0) {
+          //     const assistantMessageId = uuid();
+          //     client.emit('initialize-assistant-message', assistantMessageId, MessageType.Action, workspaceId, async ({ ack }) => {
+          //       if (ack === 'success') {
+          //         const notificationDirective = `::rag_empty_context_notification{notificationMessage="No relevant information found about topic within the workspace. Assistant response information may be inaccurate. Try adding files to the workspace that contains relevant information."}`;
+          //         client.emit('content', notificationDirective, notificationDirective as any, assistantMessageId, workspaceId);
+                  
+          //         client.emit('end', workspaceId);
+        
+          //         await assistantController.insertChatHistory(
+          //           {
+          //             role: 'assistant',
+          //             content: notificationDirective,
+          //           },
+          //           assistantMessageId,
+          //           MessageType.Action,
+          //           workspaceId
+          //         );
+          //       }
+          //     });
+          //     return; // Exit early if no context found
+          //   }
+
+          //   // If context exists, proceed with module creation
+          //   const intermediateResponseMessage = await this.intermediateResponse(
+          //     client,
+          //     subject,
+          //     context_instructions,
+          //     `The user needs to confirm if they want to generate the module outline first or directly generate the module and let the system decide the outline directly without confirmation.`,
+          //     workspaceId,
+          //     chatHistory.slice(-1),
+          //     userTokens
+          //   );
+
+          //   if (intermediateResponseMessage) {
+          //     console.log("Generating assistant message...");
+
+          //     const assistantMessageId = uuid();
+          //     client.emit('initialize-assistant-message', assistantMessageId, MessageType.Action, workspaceId, async ({ ack }) => {
+          //       if (ack === 'success') {
+          //         const moduleOutlineConfirmDirective = `\n\n::module_outline_generation_confirm{subject="${subject}" context_instructions="${context_instructions}"}\n\n`;
+          //         client.emit('content', moduleOutlineConfirmDirective, moduleOutlineConfirmDirective as any, assistantMessageId, workspaceId);
+                  
+          //         client.emit('end', workspaceId);
+        
+          //         await assistantController.insertChatHistory(
+          //           {
+          //             role: 'assistant',
+          //             content: moduleOutlineConfirmDirective,
+          //           },
+          //           assistantMessageId,
+          //           MessageType.Action,
+          //           workspaceId
+          //         );
+          //       }
+          //     });
+          //   }
+          // } catch (error) {
+          //   console.error("Error getting context:", error);
+          //   throw error;
+          // }
           const intermediateResponseMessage = await this.intermediateResponse(
             client,
             subject,

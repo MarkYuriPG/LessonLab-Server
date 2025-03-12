@@ -10,7 +10,7 @@ export async function createPrompt(messages: any[], namespaceId: string, specifi
     // Get the context from the last message
     let context
     try {
-      context = await getContext(lastMessage, namespaceId);
+      context = await getContext(lastMessage, namespaceId, 0.6);
     } catch (error) {
       throw error
     }
@@ -80,7 +80,7 @@ export async function createQuizPrompt(items: any[], namespaceId: string, specif
     // Get the context from the last message
     let context
     try {
-      context = await getContext(lastMessage, namespaceId);
+      context = await getContext(lastMessage, namespaceId, 0.6);
     } catch (error) {
       throw error
     }

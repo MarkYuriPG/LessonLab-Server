@@ -335,7 +335,7 @@ class AISocketHandler {
       case IntentTypeEnum.Values.command:
         console.log("command pipeline");
         
-        context = await getContext(intentDecompositionCompletion.parsed.subject, workspaceId, 0.6);
+        context = await getContext(intentDecompositionCompletion.parsed.subject, workspaceId, 0.5);
 
         if (context?.length === 0) {
           const assistantMessageId = uuid();

@@ -38,7 +38,7 @@ async function processFileWorker() {
       throw new Error('Failed to process file!');
     }
 
-    parentPort?.postMessage({ error: "Debug mode"});
+    // parentPort?.postMessage({ error: "Debug mode"});
   } catch (error: any) {
     parentPort?.postMessage({ error: error.message });
   }
